@@ -7,13 +7,20 @@ An interactive web-based simulator for learning **quadrature (I/Q) signal sampli
 
 ## 🎯 What It Does
 
-This app lets you:
+Two versions, same core concepts:
 
-- **Generate** real-valued signals (tones, AM, FM, chirps)
+**Simple** — step-by-step walkthrough with animated visualizations, image frequency demo, and history of I/Q.
+
+**Real** — realistic RF receiver pipeline with frequency-domain analysis, configurable filtering, receiver noise simulation, SNR measurement, and constellation diagrams.
+
+Both let you:
+
+- **Generate** real-valued signals (pure tones, AM, FM)
 - **Downconvert** them to I/Q baseband by mixing with cos/sin local oscillators
-- **Filter** the mixed output with configurable low-pass filters
-- **Visualize** the I/Q components, constellation diagram, and reconstructed signal
-- **Reconstruct** the original signal from I/Q to verify the round-trip
+- **Filter** the mixed output with configurable windowed-sinc low-pass filters
+- **Visualize** spectra, I/Q time domain, and constellation diagrams
+- **Reconstruct** the original signal and measure fidelity via SNR
+- **Add noise** to simulate real receiver conditions
 
 ## 🧠 Concepts Demonstrated
 
@@ -22,12 +29,14 @@ This app lets you:
 - Low-pass filtering (moving average and windowed sinc FIR)
 - I/Q constellation diagrams
 - AM/FM modulation and demodulation
+- Frequency domain analysis (FFT spectra)
+- Receiver noise and signal-to-noise ratio
 - Signal reconstruction fidelity
 
 ## 🚀 Getting Started
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/quadrature-signal-lab.git
+git clone https://github.com/r9v/quadrature-signal-lab.git
 cd quadrature-signal-lab
 npm install
 npm run dev
