@@ -63,19 +63,6 @@ npm run deploy
 - **Vite** — Build tool
 - **Vanilla JS** — All DSP math (no external DSP libraries)
 
-## 📐 The Math
-
-**Downconversion (Real → I/Q):**
-```
-I(t) = LPF[ signal(t) · cos(2π·fc·t) ]
-Q(t) = LPF[ signal(t) · (-sin(2π·fc·t)) ]
-```
-
-**Upconversion (I/Q → Real):**
-```
-output(t) = I(t)·cos(2π·fc·t) - Q(t)·sin(2π·fc·t)
-```
-
 ## License
 
 MIT
