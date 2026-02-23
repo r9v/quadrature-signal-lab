@@ -5,6 +5,12 @@ An interactive web-based simulator for learning **quadrature (I/Q) signal sampli
 ![React](https://img.shields.io/badge/React-18-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
+## 🌐 Live Demo
+
+**[Simple version](https://r9v.github.io/quadrature-signal-lab/simple/)** — step-by-step walkthrough
+
+**[Real version](https://r9v.github.io/quadrature-signal-lab/real/)** — full receiver pipeline
+
 ## 🎯 What It Does
 
 Two versions, same core concepts:
