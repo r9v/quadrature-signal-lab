@@ -7,9 +7,7 @@ An interactive web-based simulator for learning **quadrature (I/Q) signal sampli
 
 ## 🌐 Live Demo
 
-**[Simple version](https://r9v.github.io/quadrature-signal-lab/simple/)** — step-by-step walkthrough
-
-**[Real version](https://r9v.github.io/quadrature-signal-lab/real/)** — full receiver pipeline
+**[r9v.github.io/quadrature-signal-lab](https://r9v.github.io/quadrature-signal-lab/)**
 
 ## 🎯 What It Does
 
@@ -49,12 +47,6 @@ npm run dev
 ```
 
 Open [http://localhost:5173](http://localhost:5173) in your browser.
-
-## 📦 Deploy to GitHub Pages
-
-```bash
-npm run deploy
-```
 
 ## 🛠 Tech Stack
 
