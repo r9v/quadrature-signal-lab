@@ -316,11 +316,16 @@ export default function App() {
             <h3 className="subsection-title">After Mixing — Raw Baseband</h3>
             <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 12 }}>
               The input signal has been multiplied by cos and −sin at the carrier frequency,
-              shifting everything down to baseband. Notice the spike near 0 Hz — that's your
-              actual signal content. But there's also an unwanted copy far to the left at
-              twice the carrier frequency (the mixing image). The low-pass filter in the
-              next step removes it. The same thing happens in every real receiver — the
-              analog or digital LPF (low-pass filter) after the mixer is specifically there to kill that image.
+              producing two channels: <strong style={{ color: '#2563eb' }}>I</strong> (in-phase) and <strong style={{ color: '#dc2626' }}>Q</strong> (quadrature).
+              These aren't independent — they're the real and imaginary parts of a single complex signal:
+              x[n] = I[n] + jQ[n]. The spectrum below is a <strong>complex FFT</strong> of that combined signal,
+              which is why it shows both positive and negative frequencies.
+            </p>
+            <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 12 }}>
+              Notice the spike near 0 Hz — that's your actual signal content shifted down from the carrier.
+              But there's also an unwanted copy on the negative side at twice the carrier frequency (the mixing image).
+              The low-pass filter in the next step removes it. The same thing happens in every real receiver —
+              the analog or digital LPF after the mixer is specifically there to kill that image.
               Without it, the double-frequency component would corrupt your I/Q data and
               make the constellation diagram messy.
             </p>
