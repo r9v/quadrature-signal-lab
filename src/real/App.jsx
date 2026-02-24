@@ -83,7 +83,7 @@ export default function App() {
       const capture = realCaptures[realSignalIdx];
       const N = capture.I.length;
       lSR = capture.sample_rate;
-      lCarrier = lSR / 4; // 512 kHz — safe quarter-rate carrier
+      lCarrier = lSR / 5; // ~410 kHz — keeps 2×fc image away from Nyquist edge
       lScaleFactor = capture.center_freq_mhz * 1e6 / lCarrier;
       lFilterCutoff = filterBW / 2; // real Hz, no scaling needed
       t = new Float64Array(N);
