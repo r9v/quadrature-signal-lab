@@ -12,7 +12,6 @@ const TWO_PI = 2 * Math.PI;
  */
 export function fftReal(signal, sampleRate) {
   const N = nextPow2(signal.length);
-  // Zero-pad
   const re = new Float64Array(N);
   const im = new Float64Array(N);
   for (let i = 0; i < signal.length; i++) re[i] = signal[i];
@@ -65,7 +64,10 @@ export function fftComplex(I, Q, sampleRate) {
  * Convert magnitudes to dB scale (relative to max).
  */
 export function toDb(magnitudes, floor = -80) {
-  const max = Math.max(...magnitudes);
+  let max = 0;
+  for (let i = 0; i < magnitudes.length; i++) {
+    if (magnitudes[i] > max) max = magnitudes[i];
+  }
   const db = new Float64Array(magnitudes.length);
   for (let i = 0; i < magnitudes.length; i++) {
     const val = magnitudes[i] > 0 ? 20 * Math.log10(magnitudes[i] / max) : floor;

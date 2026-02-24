@@ -10,6 +10,7 @@ import {
 } from "../dsp/iq";
 import { fftReal, fftComplex, toDb } from "../dsp/fft";
 import { sincLPF } from "../dsp/filter";
+import realCaptures from "../data/fm_captures.json";
 
 const COLORS = {
   input: "#1aad50",
@@ -44,11 +45,13 @@ function downsampleSpectrum(frequencies, dbValues, maxPoints = 500) {
 
 export default function App() {
   // Signal type
-  const [signalType, setSignalType] = useState("fm");
+  const [signalType, setSignalType] = useState("am");
+  const [realSignalIdx, setRealSignalIdx] = useState(0);
+  const isRealSignal = signalType.startsWith("real_");
 
-  // Carrier frequency (MHz-scale, but we use kHz internally for performance)
-  const [carrierFreqMHz, setCarrierFreqMHz] = useState(100);
-  const carrierFreq = carrierFreqMHz * 1e6; // Convert to Hz
+  // Carrier frequency depends on signal type
+  const carrierFreqMHz = isRealSignal ? realCaptures[realSignalIdx].center_freq_mhz : 1;
+  const carrierFreq = carrierFreqMHz * 1e6;
 
   // Modulating signal params
   const [modulatingFreq, setModulatingFreq] = useState(15000); // 15 kHz
@@ -56,8 +59,8 @@ export default function App() {
   const [amIndex] = useState(0.8);
 
   // Sampling: we simulate at a scaled rate
-  // Real: 250 MHz sample rate for 100 MHz carrier
-  // We use a scaling factor: generate at low freq, label as MHz
+  // We use a scaling factor: generate at low freq, label as real freq
+  // At 1 MHz carrier: scaleFactor=100, modulation stays resolvable
   const scaledCarrier = 10000; // 10 kHz internal carrier
   const scaleFactor = carrierFreq / scaledCarrier;
   const scaledModFreq = modulatingFreq / scaleFactor;
@@ -65,46 +68,55 @@ export default function App() {
   const duration = 0.05; // 50ms of signal
 
   // Filter cutoff (bandwidth around carrier)
-  const [filterBW, setFilterBW] = useState(100000); // 100 kHz
-  const [filterTaps, setFilterTaps] = useState(21);
+  const [filterBW, setFilterBW] = useState(200000); // 200 kHz
+  const [filterTaps, setFilterTaps] = useState(51);
   const [noisePower, setNoisePower] = useState(0.05); // noise amplitude
   const scaledFilterCutoff = filterBW / scaleFactor / 2;
 
   // Compute all signals
   const results = useMemo(() => {
-    const t = generateTimeArray(scaledSampleRate, duration);
+    // --- Choose pipeline parameters based on signal source ---
+    let t, inputSignal, lCarrier, lSR, lScaleFactor, lFilterCutoff;
 
-    // Generate signal at scaled frequency
-    let inputSignal;
-    const fmIndex = fmDeviation / modulatingFreq;
-
-    if (signalType === "fm") {
-      inputSignal = generateSignal("fm", t, {
-        carrierFreq: scaledCarrier,
-        modulatingFreq: scaledModFreq,
-        modulationIndex: fmIndex / scaleFactor,
-      });
-    } else if (signalType === "am") {
-      inputSignal = generateSignal("am", t, {
-        carrierFreq: scaledCarrier,
-        modulatingFreq: scaledModFreq,
-        modulationIndex: amIndex,
-      });
+    if (isRealSignal) {
+      // Real I/Q: upconvert baseband onto an internal carrier
+      const capture = realCaptures[realSignalIdx];
+      const N = capture.I.length;
+      lSR = capture.sample_rate;
+      lCarrier = lSR / 4; // 512 kHz — safe quarter-rate carrier
+      lScaleFactor = capture.center_freq_mhz * 1e6 / lCarrier;
+      lFilterCutoff = filterBW / 2; // real Hz, no scaling needed
+      t = new Float64Array(N);
+      for (let i = 0; i < N; i++) t[i] = i / lSR;
+      const captureI = new Float64Array(capture.I);
+      const captureQ = new Float64Array(capture.Q);
+      inputSignal = upconvert(captureI, captureQ, t, lCarrier);
     } else {
-      // Simple tone
-      inputSignal = generateSignal("cosine", t, {
-        frequency: scaledCarrier,
-        amplitude: 1,
-      });
+      // Synthetic: generate modulated signal at scaled carrier
+      lSR = scaledSampleRate;
+      lCarrier = scaledCarrier;
+      lScaleFactor = scaleFactor;
+      lFilterCutoff = scaledFilterCutoff;
+      t = generateTimeArray(lSR, duration);
+      const fmIndex = fmDeviation / modulatingFreq;
+      if (signalType === "fm") {
+        inputSignal = generateSignal("fm", t, {
+          carrierFreq: lCarrier, modulatingFreq: scaledModFreq, modulationIndex: fmIndex,
+        });
+      } else if (signalType === "am") {
+        inputSignal = generateSignal("am", t, {
+          carrierFreq: lCarrier, modulatingFreq: scaledModFreq, modulationIndex: amIndex,
+        });
+      } else {
+        inputSignal = generateSignal("cosine", t, { frequency: lCarrier, amplitude: 1 });
+      }
     }
 
-    // Downconvert
-    const { I: rawI, Q: rawQ } = downconvert(inputSignal, t, scaledCarrier);
+    // --- Shared pipeline: downconvert → noise → filter → reconstruct ---
+    const { I: rawI, Q: rawQ } = downconvert(inputSignal, t, lCarrier);
 
-    // Add receiver noise (thermal noise before filtering)
     if (noisePower > 0) {
       for (let i = 0; i < rawI.length; i++) {
-        // Box-Muller transform for Gaussian noise
         const u1 = Math.random() || 1e-10;
         const u2 = Math.random();
         const z0 = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
@@ -114,61 +126,54 @@ export default function App() {
       }
     }
 
-    // Apply LPF
-    const filteredI = sincLPF(rawI, scaledFilterCutoff, scaledSampleRate, filterTaps);
-    const filteredQ = sincLPF(rawQ, scaledFilterCutoff, scaledSampleRate, filterTaps);
+    const filteredI = sincLPF(rawI, lFilterCutoff, lSR, filterTaps);
+    const filteredQ = sincLPF(rawQ, lFilterCutoff, lSR, filterTaps);
+    const reconstructed = upconvert(filteredI, filteredQ, t, lCarrier);
 
-    // Reconstruct
-    const reconstructed = upconvert(filteredI, filteredQ, t, scaledCarrier);
-
-    // Spectra
-    const inputSpectrum = fftReal(inputSignal, scaledSampleRate);
+    // --- Spectra ---
+    const inputSpectrum = fftReal(inputSignal, lSR);
     const inputDb = toDb(inputSpectrum.magnitudes);
-
-    const rawIQSpectrum = fftComplex(rawI, rawQ, scaledSampleRate);
+    const rawIQSpectrum = fftComplex(rawI, rawQ, lSR);
     const rawIQDb = toDb(rawIQSpectrum.magnitudes);
-
-    const filteredIQSpectrum = fftComplex(filteredI, filteredQ, scaledSampleRate);
+    const filteredIQSpectrum = fftComplex(filteredI, filteredQ, lSR);
     const filteredIQDb = toDb(filteredIQSpectrum.magnitudes);
-
-    const reconstructedSpectrum = fftReal(reconstructed, scaledSampleRate);
+    const reconstructedSpectrum = fftReal(reconstructed, lSR);
     const reconstructedDb = toDb(reconstructedSpectrum.magnitudes);
 
+    // --- SNR ---
+    const reconstructionSNR = (() => {
+      const delay = Math.floor(filterTaps / 2);
+      const start = delay + 10;
+      const end = inputSignal.length - delay - 10;
+      if (end <= start) return '0.0';
+      let dotProd = 0, reconPow = 0;
+      for (let i = start; i < end; i++) {
+        dotProd += inputSignal[i] * reconstructed[i];
+        reconPow += reconstructed[i] * reconstructed[i];
+      }
+      const sc = reconPow > 0 ? dotProd / reconPow : 1;
+      let sigPow = 0, errPow = 0;
+      for (let i = start; i < end; i++) {
+        sigPow += inputSignal[i] * inputSignal[i];
+        const err = inputSignal[i] - sc * reconstructed[i];
+        errPow += err * err;
+      }
+      return errPow > 0 ? (10 * Math.log10(sigPow / errPow)).toFixed(1) : '∞';
+    })();
+
     return {
-      t, inputSignal,
-      rawI, rawQ,
-      filteredI, filteredQ,
-      reconstructed,
-      inputSpectrum: { frequencies: inputSpectrum.frequencies.map(f => f * scaleFactor), db: inputDb },
-      rawIQSpectrum: { frequencies: rawIQSpectrum.frequencies.map(f => f * scaleFactor), db: rawIQDb },
-      filteredIQSpectrum: { frequencies: filteredIQSpectrum.frequencies.map(f => f * scaleFactor), db: filteredIQDb },
-      reconstructedSpectrum: { frequencies: reconstructedSpectrum.frequencies.map(f => f * scaleFactor), db: reconstructedDb },
-      scaleFactor,
-      // Reconstruction quality: SNR in dB
-      // Use cross-correlation to find best alignment and amplitude scaling
-      reconstructionSNR: (() => {
-        const delay = Math.floor(filterTaps / 2);
-        const start = delay + 10;
-        const end = inputSignal.length - delay - 10;
-        if (end <= start) return '0.0';
-        // Find amplitude scale factor (reconstructed is ~0.5x original due to trig identity)
-        let dotProd = 0, reconPow = 0;
-        for (let i = start; i < end; i++) {
-          dotProd += inputSignal[i] * reconstructed[i];
-          reconPow += reconstructed[i] * reconstructed[i];
-        }
-        const scale = reconPow > 0 ? dotProd / reconPow : 1;
-        // Compute SNR with scaled reconstruction
-        let sigPow = 0, errPow = 0;
-        for (let i = start; i < end; i++) {
-          sigPow += inputSignal[i] * inputSignal[i];
-          const err = inputSignal[i] - scale * reconstructed[i];
-          errPow += err * err;
-        }
-        return errPow > 0 ? (10 * Math.log10(sigPow / errPow)).toFixed(1) : '∞';
-      })(),
+      t, inputSignal, rawI, rawQ, filteredI, filteredQ, reconstructed,
+      inputSpectrum: { frequencies: inputSpectrum.frequencies.map(f => f * lScaleFactor), db: inputDb },
+      rawIQSpectrum: { frequencies: rawIQSpectrum.frequencies.map(f => f * lScaleFactor), db: rawIQDb },
+      filteredIQSpectrum: { frequencies: filteredIQSpectrum.frequencies.map(f => f * lScaleFactor), db: filteredIQDb },
+      reconstructedSpectrum: { frequencies: reconstructedSpectrum.frequencies.map(f => f * lScaleFactor), db: reconstructedDb },
+      scaleFactor: lScaleFactor,
+      reconstructionSNR,
+      isReal: isRealSignal,
+      captureLabel: isRealSignal ? realCaptures[realSignalIdx].label : null,
+      centerFreqMHz: isRealSignal ? realCaptures[realSignalIdx].center_freq_mhz : carrierFreqMHz,
     };
-  }, [signalType, scaledCarrier, scaledModFreq, scaledSampleRate, duration, amIndex, fmDeviation, modulatingFreq, scaleFactor, scaledFilterCutoff, filterTaps, noisePower]);
+  }, [signalType, scaledCarrier, scaledModFreq, scaledSampleRate, duration, amIndex, fmDeviation, modulatingFreq, scaleFactor, scaledFilterCutoff, filterTaps, noisePower, isRealSignal, realSignalIdx, filterBW]);
 
   // Chart data
   const filteredIQChart = useMemo(
@@ -180,9 +185,10 @@ export default function App() {
   const inputSpectrumChart = useMemo(() => {
     const freqs = results.inputSpectrum.frequencies;
     const db = results.inputSpectrum.db;
-    const margin = carrierFreq * 0.5; // show ±50% of carrier freq
-    const lo = carrierFreq - margin;
-    const hi = carrierFreq + margin;
+    const center = results.centerFreqMHz * 1e6;
+    const margin = center * 0.5;
+    const lo = center - margin;
+    const hi = center + margin;
     const filtered = [];
     const step = Math.max(1, Math.floor(freqs.length / 500));
     for (let i = 0; i < freqs.length; i += step) {
@@ -191,7 +197,7 @@ export default function App() {
       }
     }
     return filtered;
-  }, [results, carrierFreq]);
+  }, [results]);
   const rawIQSpectrumChart = useMemo(
     () => downsampleSpectrum(results.rawIQSpectrum.frequencies, results.rawIQSpectrum.db),
     [results],
@@ -205,9 +211,10 @@ export default function App() {
     const origDb = results.inputSpectrum.db;
     const reconFreqs = results.reconstructedSpectrum.frequencies;
     const reconDb = results.reconstructedSpectrum.db;
-    const margin = carrierFreq * 0.5;
-    const lo = carrierFreq - margin;
-    const hi = carrierFreq + margin;
+    const center = results.centerFreqMHz * 1e6;
+    const margin = center * 0.5;
+    const lo = center - margin;
+    const hi = center + margin;
     const maxPoints = 500;
     const step = Math.max(1, Math.floor(origFreqs.length / maxPoints));
     const data = [];
@@ -221,10 +228,14 @@ export default function App() {
       }
     }
     return data;
-  }, [results, carrierFreq]);
+  }, [results]);
 
   const handleSignalChange = (e) => {
-    setSignalType(e.target.value);
+    const val = e.target.value;
+    if (val.startsWith("real_")) {
+      setRealSignalIdx(parseInt(val.split("_")[1]));
+    }
+    setSignalType(val);
   };
 
   return (
@@ -253,19 +264,13 @@ export default function App() {
                 <select value={signalType} onChange={handleSignalChange}>
                   <option value="tone">Pure Tone</option>
                   <option value="am">AM</option>
-                  <option value="fm">FM (Broadcast)</option>
+                  <option disabled>── Real Captures ──</option>
+                  {realCaptures.map((c, i) => (
+                    <option key={i} value={`real_${i}`}>📡 {c.label}</option>
+                  ))}
                 </select>
               </div>
-              <div className="control-group">
-                <label>Carrier Frequency</label>
-                <input
-                  type="range" min={50} max={500} step={10}
-                  value={carrierFreqMHz}
-                  onChange={(e) => setCarrierFreqMHz(Number(e.target.value))}
-                />
-                <span className="control-value">{carrierFreqMHz} MHz</span>
-              </div>
-              {signalType !== "tone" && (
+              {!isRealSignal && signalType !== "tone" && (
                 <div className="control-group">
                   <label>Modulating Frequency</label>
                   <input
@@ -278,15 +283,23 @@ export default function App() {
               )}
             </div>
           </div>
+          {isRealSignal && (
+            <div className="subsection">
+              <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                📡 <strong>{results.captureLabel}</strong> — real I/Q captured with RTL-SDR at {results.centerFreqMHz} MHz, upconverted onto an internal carrier for visualization.
+              </p>
+            </div>
+          )}
           <div className="subsection">
             <h3 className="subsection-title">RF Spectrum</h3>
             <SpectrumPlot
               data={inputSpectrumChart}
-              freqUnit="MHz"
+              freqUnit={isRealSignal ? "MHz" : "kHz"}
               color={COLORS.input}
               height={200}
             />
           </div>
+
         </div>
       </div>
 
@@ -327,7 +340,7 @@ export default function App() {
             </div>
             <SpectrumPlot
               data={rawIQSpectrumChart}
-              freqUnit="MHz"
+              freqUnit={isRealSignal ? "MHz" : "kHz"}
               color={COLORS.I}
               height={200}
             />
@@ -377,21 +390,21 @@ export default function App() {
             </div>
             <SpectrumPlot
               data={filteredIQSpectrumChart}
-              freqUnit="MHz"
+              freqUnit={isRealSignal ? "MHz" : "kHz"}
               color={COLORS.I}
               height={200}
             />
           </div>
           <div className="subsection">
-            <p className="chart-desc" style={{ marginBottom: 8, fontWeight: 600 }}>Clean I/Q time domain</p>
+            <p className="chart-desc" style={{ marginBottom: 4, fontWeight: 600 }}>Clean I/Q time domain</p>
             <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 12 }}>
-              This is what the filtered baseband signal looks like over time.
-              The <strong style={{ color: '#2563eb' }}>I</strong> channel carries the amplitude envelope and
-              the <strong style={{ color: '#dc2626' }}>Q</strong> channel carries the phase offset.
-              For FM, both channels oscillate at the modulating frequency with a 90° shift
-              between them. For AM, <strong style={{ color: '#2563eb' }}>I</strong> follows the
-              envelope shape while <strong style={{ color: '#dc2626' }}>Q</strong> stays near zero.
-              These are the actual samples an SDR streams to your computer.
+              What you see here depends on the modulation type:
+              <br /><strong>Pure tone</strong> — I and Q are flat DC lines. The carrier downconverts to a constant complex number (fixed amplitude, fixed phase).
+              <br /><strong>AM</strong> — I shows the amplitude envelope (the modulating signal), Q stays near zero. This is because AM only changes the carrier's amplitude, not its phase, and I is aligned with the carrier.
+              <br /><strong>FM</strong> — both I and Q oscillate as sinusoids. The carrier's amplitude is constant but its phase rotates, so you need both channels to track the instantaneous frequency.
+              <br />In all cases, I and Q together form a complex number at each instant — amplitude = √(I²+Q²), phase = arctan(Q/I). That's everything a demodulator needs.
+            </p>
+            <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 12 }}>
             </p>
             <div className="legend">
               <span className="legend-item">
@@ -455,19 +468,13 @@ export default function App() {
                     <select value={signalType} onChange={handleSignalChange}>
                       <option value="tone">Pure Tone</option>
                       <option value="am">AM</option>
-                      <option value="fm">FM (Broadcast)</option>
+                      <option disabled>── Real Captures ──</option>
+                      {realCaptures.map((c, i) => (
+                        <option key={i} value={`real_${i}`}>📡 {c.label}</option>
+                      ))}
                     </select>
                   </div>
-                  <div className="control-group">
-                    <label>Carrier Frequency</label>
-                    <input
-                      type="range" min={50} max={500} step={10}
-                      value={carrierFreqMHz}
-                      onChange={(e) => setCarrierFreqMHz(Number(e.target.value))}
-                    />
-                    <span className="control-value">{carrierFreqMHz} MHz</span>
-                  </div>
-                  {signalType !== "tone" && (
+                  {!isRealSignal && signalType !== "tone" && (
                     <div className="control-group">
                       <label>Modulating Frequency</label>
                       <input
@@ -553,7 +560,7 @@ export default function App() {
             </div>
             <SpectrumPlot
               data={reconstructionCompareChart}
-              freqUnit="MHz"
+              freqUnit={isRealSignal ? "MHz" : "kHz"}
               height={200}
               traces={[
                 { key: 'original', color: COLORS.input, label: 'Original' },
