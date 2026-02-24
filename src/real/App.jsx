@@ -54,7 +54,7 @@ export default function App() {
   const carrierFreq = carrierFreqMHz * 1e6;
 
   // Modulating signal params
-  const [modulatingFreq, setModulatingFreq] = useState(15000); // 15 kHz
+  const [modulatingFreq, setModulatingFreq] = useState(50000); // 50 kHz
   const [fmDeviation] = useState(75000); // 75 kHz FM deviation (standard broadcast)
   const [amIndex] = useState(0.8);
 
