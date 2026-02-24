@@ -16,10 +16,25 @@ export default function WaveformPlot({
   data,
   traces,
   xKey = 't',
-  yDomain = [-1.5, 1.5],
+  yDomain = 'auto',
   height = 200,
   onHover = null,
 }) {
+  const computedYDomain = yDomain === 'auto' ? (() => {
+    let min = Infinity, max = -Infinity;
+    for (const pt of data) {
+      for (const tr of traces) {
+        const v = pt[tr.key];
+        if (v != null) {
+          if (v < min) min = v;
+          if (v > max) max = v;
+        }
+      }
+    }
+    const pad = (max - min) * 0.1 || 0.1;
+    return [min - pad, max + pad];
+  })() : yDomain;
+
   return (
     <ResponsiveContainer width="100%" height={height}>
       <LineChart
@@ -45,7 +60,7 @@ export default function WaveformPlot({
         <YAxis
           stroke="#5c6178"
           fontSize={11}
-          domain={yDomain}
+          domain={computedYDomain}
           tickFormatter={(v) => v.toFixed(1)}
         />
         <Tooltip
