@@ -6,6 +6,7 @@ import {
   generateSignal,
   downconvert,
   upconvert,
+  downsampleForChart,
 } from "./dsp/iq";
 
 const COLORS = {
@@ -21,20 +22,6 @@ function isSimple(type) {
   return SIMPLE_TYPES.includes(type);
 }
 
-// Downsample data for chart rendering
-function downsampleForChart(t, signals) {
-  const maxPoints = 2000;
-  const step = Math.max(1, Math.floor(t.length / maxPoints));
-  const data = [];
-  for (let i = 0; i < t.length; i += step) {
-    const point = { t: t[i] };
-    for (const [key, arr] of Object.entries(signals)) {
-      point[key] = arr[i];
-    }
-    data.push(point);
-  }
-  return data;
-}
 
 export default function App() {
   // Signal type

@@ -7,6 +7,7 @@ import {
   generateSignal,
   downconvert,
   upconvert,
+  downsampleForChart,
 } from "../dsp/iq";
 import { fftReal, fftComplex, toDb } from "../dsp/fft";
 import { sincLPF } from "../dsp/filter";
@@ -19,19 +20,6 @@ const COLORS = {
   output: "#7c3aed",
 };
 
-// Downsample for chart rendering
-function downsampleForChart(t, signals, maxPoints = 2000) {
-  const step = Math.max(1, Math.floor(t.length / maxPoints));
-  const data = [];
-  for (let i = 0; i < t.length; i += step) {
-    const point = { t: t[i] };
-    for (const [key, arr] of Object.entries(signals)) {
-      point[key] = arr[i];
-    }
-    data.push(point);
-  }
-  return data;
-}
 
 // Downsample spectrum data
 function downsampleSpectrum(frequencies, dbValues, maxPoints = 500) {
@@ -45,7 +33,7 @@ function downsampleSpectrum(frequencies, dbValues, maxPoints = 500) {
 
 export default function App() {
   // Signal type
-  const [signalType, setSignalType] = useState("am");
+  const [signalType, setSignalType] = useState("real_0");
   const [realSignalIdx, setRealSignalIdx] = useState(0);
   const isRealSignal = signalType.startsWith("real_");
 

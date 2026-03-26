@@ -172,3 +172,19 @@ export function phase(I, Q) {
   }
   return ph;
 }
+
+/**
+ * Downsample time-domain signals for chart rendering.
+ */
+export function downsampleForChart(t, signals, maxPoints = 2000) {
+  const step = Math.max(1, Math.floor(t.length / maxPoints));
+  const data = [];
+  for (let i = 0; i < t.length; i += step) {
+    const point = { t: t[i] };
+    for (const [key, arr] of Object.entries(signals)) {
+      point[key] = arr[i];
+    }
+    data.push(point);
+  }
+  return data;
+}
